@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rent Bill Generator</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f5f6f8;--card:#fff;--text:#1d2330;--muted:#667085;--line:#e1e4ea;--brand:#1f7a5c;--brandtext:#fff;--input:#fff}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171c;--card:#1d222a;--text:#eceff4;--muted:#9aa4b2;--line:#2e3540;--brand:#3fb68b;--brandtext:#06140e;--input:#14171c;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14171c;--card:#1d222a;--text:#eceff4;--muted:#9aa4b2;--line:#2e3540;--brand:#3fb68b;--brandtext:#06140e;--input:#14171c;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:960px;margin:0 auto;padding:16px;display:grid;gap:16px;grid-template-columns:1fr}
+@media(min-width:800px){.wrap{grid-template-columns:1fr 1fr;align-items:start}}
+h1{font-size:22px;margin:0 0 2px}h2{font-size:16px;margin:0 0 10px}
+.sub{color:var(--muted);font-size:14px;margin:0}
+header{grid-column:1/-1}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+input{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--input);color:var(--text);font-size:16px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{padding:11px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:15px;cursor:pointer}
+button.p{background:var(--brand);color:var(--brandtext);border-color:var(--brand);font-weight:600}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.err{color:#c0392b;font-size:14px;margin-top:8px;min-height:1em}
+#bill{font-size:15px}
+#bill .top{display:flex;justify-content:space-between;gap:10px;border-bottom:2px solid var(--brand);padding-bottom:8px;margin-bottom:10px}
+#bill table{width:100%;border-collapse:collapse}
+#bill td{padding:6px 0;border-bottom:1px solid var(--line);vertical-align:top}
+#bill td:last-child{text-align:right;white-space:nowrap}
+#bill .sm{color:var(--muted);font-size:13px}
+#bill .tot td{font-weight:700;font-size:18px;border-bottom:0;padding-top:12px}
+.foot{margin-top:18px;color:var(--muted);font-size:13px}
+.note{font-size:13px;color:var(--muted);margin-top:10px}
+@media print{
+ body{background:#fff;color:#000}.wrap{display:block;padding:0}
+ header,#form,.actions,.note{display:none!important}
+ .card{border:0;padding:0;background:#fff}#bill td,#bill .sm,.foot{color:#000;border-color:#999}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><h1>Rent Bill Generator</h1><p class="sub">Enter this month’s details, then print or share the bill.</p></header>
+
+<section class="card" id="form">
+<h2>Bill details</h2>
+<label>Owner name</label><input id="owner" placeholder="Your name">
+<label>Property / address</label><input id="addr" placeholder="e.g. 12, Gandhi Street, Chennai">
+<label>Tenant name</label><input id="tenant" list="tlist" placeholder="Tenant name"><datalist id="tlist"></datalist>
+<div class="row"><div><label>Tenant phone (for WhatsApp)</label><input id="phone" inputmode="tel" placeholder="9876543210"></div>
+<div><label>Month</label><input id="month" type="month"></div></div>
+<div class="row"><div><label>Monthly rent (₹)</label><input id="rent" type="number" min="0" step="any" inputmode="decimal"></div>
+<div><label>Water bill (₹)</label><input id="water" type="number" min="0" step="any" inputmode="decimal"></div></div>
+<div class="row"><div><label>Previous meter reading</label><input id="prev" type="number" min="0" step="any" inputmode="decimal"></div>
+<div><label>Current meter reading</label><input id="curr" type="number" min="0" step="any" inputmode="decimal"></div></div>
+<div class="row"><div><label>Rate per unit (₹)</label><input id="rate" type="number" min="0" step="any" inputmode="decimal"></div>
+<div><label>Other charges (₹)</label><input id="other" type="number" min="0" step="any" inputmode="decimal"></div></div>
+<label>Note for other charges (optional)</label><input id="onote" placeholder="e.g. Maintenance, Garbage">
+<div class="err" id="err"></div>
+<div class="actions"><button class="p" id="gen">Generate bill</button><button id="clear">Clear</button></div>
+<p class="note">Tenant details, rate and last meter reading are remembered on this device only.</p>
+</section>
+
+<section class="card" id="out">
+<h2 class="noprint">Bill preview</h2>
+<div id="bill"><p class="sub">Your bill will appear here.</p></div>
+<div class="actions" id="acts" style="display:none">
+<button class="p" id="print">Print / Save PDF</button><button id="wa">Share on WhatsApp</button><button id="copy">Copy text</button>
+</div>
+<p class="note" id="msg"></p>
+</section>
+</div>
+
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+var KEY="rentbill_v1",store={owner:"",addr:"",rate:"",tenants:{}},lastText="";
+function load(){try{var s=localStorage.getItem(KEY);if(s)store=Object.assign(store,JSON.parse(s))}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(store))}catch(e){}}
+function paise(v){var n=parseFloat(v);return isNaN(n)?0:Math.round(n*100)}
+function inr(p){return "₹"+(p/100).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function monthLabel(v){if(!v)return"";var p=v.split("-");return new Date(+p[0],+p[1]-1,1).toLocaleDateString("en-IN",{month:"long",year:"numeric"})}
+
+function init(){
+ load();
+ $("owner").value=store.owner||"";$("addr").value=store.addr||"";$("rate").value=store.rate||"";
+ var d=new Date();$("month").value=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+ $("tlist").innerHTML=Object.keys(store.tenants).map(function(n){return '<option value="'+esc(n)+'">'}).join("");
+}
+$("tenant").addEventListener("change",function(){
+ var t=store.tenants[$("tenant").value.trim()];
+ if(t){$("phone").value=t.phone||"";$("rent").value=t.rent||"";$("prev").value=t.last||"";$("water").value=t.water||""}
+});
+
+function generate(){
+ $("err").textContent="";
+ var tenant=$("tenant").value.trim(),rent=paise($("rent").value),water=paise($("water").value),
+ other=paise($("other").value),rate=parseFloat($("rate").value)||0,
+ prev=parseFloat($("prev").value),curr=parseFloat($("curr").value);
+ if(!tenant){return fail("Please enter the tenant name.")}
+ if(rent<=0){return fail("Please enter the monthly rent.")}
+ var hasMeter=!isNaN(prev)&&!isNaN(curr),units=0,elec=0;
+ if(!isNaN(prev)!==!isNaN(curr)){return fail("Enter both meter readings, or leave both empty.")}
+ if(hasMeter){
+  if(curr<prev)return fail("Current reading cannot be lower than the previous reading.");
+  if(rate<=0)return fail("Please enter the electricity rate per unit.");
+  units=Math.round((curr-prev)*100)/100;elec=Math.round(units*rate*100);
+ }
+ var total=rent+elec+water+other,mon=monthLabel($("month").value),owner=$("owner").value.trim(),addr=$("addr").value.trim(),onote=$("onote").value.trim();
+ var rows=[["House rent",inr(rent)]];
+ if(hasMeter)rows.push(['Electricity<br><span class="sm">'+prev+' → '+curr+' = '+units+' units × ₹'+rate+'</span>',inr(elec)]);
+ if(water)rows.push(["Water bill",inr(water)]);
+ if(other)rows.push([esc(onote||"Other charges"),inr(other)]);
+ var no="RB-"+($("month").value||"").replace("-","")+"-"+tenant.replace(/\s+/g,"").slice(0,4).toUpperCase();
+ $("bill").innerHTML='<div class="top"><div><strong>'+esc(owner||"House Owner")+'</strong><div class="sm">'+esc(addr)+'</div></div><div style="text-align:right"><strong>RENT BILL</strong><div class="sm">'+esc(mon)+'<br>'+esc(no)+'</div></div></div>'
+  +'<p>Tenant: <strong>'+esc(tenant)+'</strong></p><table>'
+  +rows.map(function(r){return '<tr><td>'+r[0]+'</td><td>'+r[1]+'</td></tr>'}).join("")
+  +'<tr class="tot"><td>Total payable</td><td>'+inr(total)+'</td></tr></table>'
+  +'<p class="foot">Generated on '+new Date().toLocaleDateString("en-IN")+'. Please pay by the due date. Thank you.</p>';
+ var L=["*RENT BILL - "+mon+"*",owner?"From: "+owner:"","Tenant: "+tenant,"","House rent: "+inr(rent)];
+ if(hasMeter)L.push("Electricity ("+units+" units x Rs."+rate+"): "+inr(elec));
+ if(water)L.push("Water: "+inr(water));
+ if(other)L.push((onote||"Other")+": "+inr(other));
+ L.push("","*Total: "+inr(total)+"*");
+ lastText=L.filter(function(x,i){return x!==""||i>0}).join("\n");
+ $("acts").style.display="flex";$("msg").textContent="";
+ // remember
+ store.owner=owner;store.addr=addr;if($("rate").value)store.rate=$("rate").value;
+ store.tenants[tenant]={phone:$("phone").value.trim(),rent:$("rent").value,water:$("water").value,last:hasMeter?String(curr):($("prev").value||"")};
+ save();$("tlist").innerHTML=Object.keys(store.tenants).map(function(n){return '<option value="'+esc(n)+'">'}).join("");
+ if(window.innerWidth<800)$("out").scrollIntoView({behavior:"smooth"});
+}
+function fail(m){$("err").textContent=m}
+$("gen").onclick=generate;
+$("clear").onclick=function(){["curr","other","onote"].forEach(function(i){$(i).value=""});$("bill").innerHTML='<p class="sub">Your bill will appear here.</p>';$("acts").style.display="none"};
+$("print").onclick=function(){try{window.print()}catch(e){$("msg").textContent="Printing is blocked here. Open the page in a full browser tab and try again."}};
+$("wa").onclick=function(){
+ var ph=$("phone").value.replace(/\D/g,"");if(ph.length===10)ph="91"+ph;
+ var url="https://wa.me/"+ph+"?text="+encodeURIComponent(lastText);
+ var w=window.open(url,"_blank");if(!w)$("msg").textContent="Pop-up blocked. Use Copy text and paste it into WhatsApp."
+};
+$("copy").onclick=function(){
+ function done(){$("msg").textContent="Bill text copied."}
+ try{navigator.clipboard.writeText(lastText).then(done,function(){manual()})}catch(e){manual()}
+ function manual(){var t=document.createElement("textarea");t.value=lastText;document.body.appendChild(t);t.select();try{document.execCommand("copy");done()}catch(e){$("msg").textContent="Copy failed."}document.body.removeChild(t)}
+};
+init();
+})();
+</script>
+</body>
+</html>
